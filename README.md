@@ -14,6 +14,12 @@ Bonus: this also **answers a real open question** from RELEASE_PLAN.md §6.1 —
 `release-please-config.json` here is byte-for-byte the config proposed for `deca-pages-api`.
 Watch what its first Release PR does to `pyproject.toml`.
 
+> **Bugs this demo already caught, running for real** (kept here, not swept under the rug):
+> the very first Release PR's checklist run silently posted nothing — `release-checklist.yml`
+> assumed a previous tag always exists to diff from, which is false for a repo's first-ever
+> release. Fixed by falling back to the root commit when no tag exists yet. Only bites once,
+> on release #1 — every release after has a tag to diff against.
+
 ---
 
 ## 0. Prerequisites

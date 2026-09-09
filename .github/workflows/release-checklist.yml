@@ -39,8 +39,10 @@ jobs:
           set -euo pipefail
           LAST_TAG=$(git tag --sort=-creatordate | head -1 || true)
           if [ -z "$LAST_TAG" ]; then
-            echo "No previous tag yet -- first release, nothing to diff against."
-            exit 0
+            # First release ever -- nothing to diff against. Fall back to the
+            # repo's root commit instead of silently posting nothing.
+            LAST_TAG=$(git rev-list --max-parents=0 HEAD | tail -1)
+            echo "No previous tag yet -- diffing from the first commit ($LAST_TAG)."
           fi
           {
             python3 scripts/checklist.py "$LAST_TAG" HEAD
