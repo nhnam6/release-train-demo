@@ -38,6 +38,25 @@ gh repo create deca-release-train-demo --private --source=. --remote=origin --pu
 
 That last command creates the GitHub repo **and** pushes `main` in one step.
 
+**Required before anything else runs:** new repos default to *not* letting Actions open
+PRs — `release-please` needs to, on the very first push to `main`. Without this, its run
+fails with `GitHub Actions is not permitted to create or approve pull requests.`
+
+```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+
+gh api -X PUT "repos/$REPO/actions/permissions/workflow" --input - <<'EOF'
+{
+  "default_workflow_permissions": "write",
+  "can_approve_pull_request_reviews": true
+}
+EOF
+```
+Same toggle on github.com: **Settings → Actions → General → Workflow permissions** →
+*Read and write permissions* + check *Allow GitHub Actions to create and approve pull
+requests* → Save. Hit the error anyway because you pushed before reading this far? Re-run
+the failed job: `gh run rerun $(gh run list --workflow=release-please.yml --limit 1 --json databaseId -q '.[0].databaseId')`.
+
 ## 2. Turn on branch protection (once)
 
 Required status check on `main`, plus a tag ruleset so no one can hand-tag or delete a
