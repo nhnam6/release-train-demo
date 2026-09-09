@@ -135,18 +135,19 @@ Watch on GitHub:
    release 0.2.0"* (or similar), with `pyproject.toml`'s version bumped and a `CHANGELOG.md`
    generated. **This is the answer to the open question** — check the diff shows
    `version = "0.2.0"` under `[tool.poetry]`, not left untouched.
-3. Its `CI` and `Release Checklist` runs **will not appear automatically** — expected, not a
-   bug. Both workflows fire on `pull_request`, but this PR was opened by the default
-   `GITHUB_TOKEN`, and GitHub doesn't let a `GITHUB_TOKEN`-caused event trigger further
-   workflows (anti-recursion). This is exactly the gap flagged in RELEASE_PLAN.md §8 Q4 — the
-   real repo needs a GitHub App token to avoid it. To see them run anyway:
+3. Its `CI` and `Release Checklist` runs land as **`action_required`** in the Actions tab
+   instead of running — expected, not a bug. Both trigger on `pull_request`, but the PR was
+   opened by the default `GITHUB_TOKEN`, and GitHub gates `pull_request`-triggered runs
+   behind manual approval when the actor is a bot rather than blocking them outright. This
+   is exactly the gap flagged in RELEASE_PLAN.md §8 Q4 — the real repo needs a GitHub App
+   token to avoid the friction. Approve them for real:
    ```bash
-   gh pr checkout release-please--branches--main   # or whatever branch name it printed
-   git commit --allow-empty -m "chore: nudge CI"
-   git push
+   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+   gh run list --json databaseId,name,status -q '.[] | select(.status=="action_required")'
+   gh api -X POST "repos/$REPO/actions/runs/<run-id>/approve"   # once per pending run
    ```
-   A human push isn't subject to the same restriction — both workflows fire normally, and
-   `Release Checklist` posts a comment with the auto-generated change list + impact flags.
+   or click **Approve and run** on the run's page. Once approved, `Release Checklist` posts
+   a comment with the auto-generated change list + impact flags.
 4. **Merge that Release PR.** Watch: a `v0.2.0` tag appears (Tags tab), a GitHub Release is
    published (Releases tab), and `Release Deploy` runs — `guard` (real check against the tag),
    `deploy` (stub), `promote` (real `git push` fast-forwarding `production`). Confirm:
