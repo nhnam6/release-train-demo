@@ -1,0 +1,33 @@
+name: Release Please
+
+# Owns: rolling Release PR (version bump + CHANGELOG), and on merge — the
+# tag + GitHub Release. RELEASE_PLAN.md §6.1 / D3.
+#
+# Uses the default GITHUB_TOKEN, on purpose, for this demo. The real repo
+# needs a GitHub App token instead (RELEASE_PLAN.md §8 Q4) so the Release
+# PR's own push can trigger `pull_request` workflows (ci.yml) — the default
+# token can't, by GitHub's anti-recursion design. That means in THIS demo,
+# ci.yml will NOT auto-run on the Release PR — watch for that, it's not a
+# bug, it's exactly the gap the real plan flags.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: main

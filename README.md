@@ -1,0 +1,218 @@
+# Real-GitHub demo — tag-based release train
+
+This is the same mechanics as `_docs/deca-pages/release_tag/RELEASE_PLAN.md`, but wired
+into **real GitHub Actions on a real (throwaway) repo** instead of local bash. Everything
+git/GitHub-side is genuine: `release-please`, branch/tag rulesets, required status checks,
+the guard job, the `production` pointer branch. The only thing faked is the AWS deploy step
+(`deploy` job in `release-deploy.yml`) — no CDK/Copilot here, just an `echo`.
+
+**You run every `git push` / `gh repo create` / `gh api` command yourself.** This doc only
+prepares files and gives you the exact commands — nothing here touches GitHub on its own.
+
+Bonus: this also **answers a real open question** from RELEASE_PLAN.md §6.1 — does
+`release-please`'s `release-type: python` actually bump `[tool.poetry] version` correctly?
+`release-please-config.json` here is byte-for-byte the config proposed for `deca-pages-api`.
+Watch what its first Release PR does to `pyproject.toml`.
+
+---
+
+## 0. Prerequisites
+
+- `gh` CLI installed and logged in (`gh auth status`)
+- OK with creating a small **private** repo under your own GitHub account (or a sandbox org) —
+  this needs real Actions minutes and a real repo, there's no way around that for "giống thật"
+
+## 1. Push it
+
+```bash
+cd _docs/deca-pages/release_tag/demo/github
+
+git init -q -b main
+git config user.name  "<your name>"
+git config user.email "<your email>"
+git add -A
+git commit -q -m "chore: seed demo-service at 0.1.0"
+
+gh repo create deca-release-train-demo --private --source=. --remote=origin --push
+```
+
+That last command creates the GitHub repo **and** pushes `main` in one step.
+
+## 2. Turn on branch protection (once)
+
+Required status check on `main`, plus a tag ruleset so no one can hand-tag or delete a
+release tag — this is G3/G4 from RELEASE_PLAN.md, for real:
+
+```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+
+# Require the CI check + a PR (no direct pushes) on main
+gh api "repos/$REPO/rulesets" --input - <<'EOF'
+{
+  "name": "Protect main",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "rules": [
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": ["squash"]
+      }
+    },
+    { "type": "non_fast_forward" },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "required_status_checks": [ { "context": "test" } ],
+        "strict_required_status_checks_policy": false
+      }
+    }
+  ]
+}
+EOF
+
+# Tags v* are immutable: no delete, no force-push over an existing tag
+gh api "repos/$REPO/rulesets" --input - <<'EOF'
+{
+  "name": "Protect release tags",
+  "target": "tag",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["refs/tags/v*"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" }
+  ]
+}
+EOF
+```
+
+`required_approving_review_count: 0` is deliberate for this **solo** demo repo — you have
+no second account to approve your own PRs with. The real repo keeps the org's `2 approvals`.
+
+If the first call 422s complaining the `test` status check doesn't exist yet — GitHub won't
+let you require a check that has never reported once. Drop the `required_status_checks` rule
+from the payload, run one PR through CI (§3 below), then re-run the call with it added back.
+
+## 3. Scenario: happy path (RELEASE_PLAN.md §13.1)
+
+```bash
+git checkout -q -b feat/hello
+echo 'def hello(): return "hi"' >> app.py
+git add app.py && git commit -q -m "feat: add a hello helper"
+git push -q -u origin feat/hello
+gh pr create --fill --base main
+gh pr merge --squash --auto   # or click Merge on github.com once CI is green
+```
+
+Watch on GitHub:
+1. **Actions tab** — `CI` runs on your PR, `Release Please` runs right after it merges to `main`.
+2. **Pull requests tab** — a new PR appears, opened by `release-please[bot]`: *"chore(main):
+   release 0.2.0"* (or similar), with `pyproject.toml`'s version bumped and a `CHANGELOG.md`
+   generated. **This is the answer to the open question** — check the diff shows
+   `version = "0.2.0"` under `[tool.poetry]`, not left untouched.
+3. Its `CI` and `Release Checklist` runs **will not appear automatically** — expected, not a
+   bug. Both workflows fire on `pull_request`, but this PR was opened by the default
+   `GITHUB_TOKEN`, and GitHub doesn't let a `GITHUB_TOKEN`-caused event trigger further
+   workflows (anti-recursion). This is exactly the gap flagged in RELEASE_PLAN.md §8 Q4 — the
+   real repo needs a GitHub App token to avoid it. To see them run anyway:
+   ```bash
+   gh pr checkout release-please--branches--main   # or whatever branch name it printed
+   git commit --allow-empty -m "chore: nudge CI"
+   git push
+   ```
+   A human push isn't subject to the same restriction — both workflows fire normally, and
+   `Release Checklist` posts a comment with the auto-generated change list + impact flags.
+4. **Merge that Release PR.** Watch: a `v0.2.0` tag appears (Tags tab), a GitHub Release is
+   published (Releases tab), and `Release Deploy` runs — `guard` (real check against the tag),
+   `deploy` (stub), `promote` (real `git push` fast-forwarding `production`). Confirm:
+   ```bash
+   git fetch origin production
+   git log --oneline -1 origin/production   # should be the release commit, tagged v0.2.0
+   ```
+
+## 4. Scenario: CI red blocks merge (§13.7)
+
+```bash
+git checkout -q main && git pull -q
+git checkout -q -b fix/broken
+echo 'def add(a, b): return a - b' > app.py   # deliberately wrong
+git add app.py && git commit -q -m "fix: this is broken on purpose"
+git push -q -u origin fix/broken
+gh pr create --fill --base main
+```
+Open the PR on github.com — the merge box is red, **Merge is disabled** (required check
+failing), regardless of approvals. Fix it and push again to unblock:
+```bash
+echo 'def add(a, b): return a + b' > app.py
+git commit -aqm "fix: revert the deliberate breakage"
+git push
+```
+
+## 5. Scenario: a bad tag gets rejected (§13.5/13.6)
+
+```bash
+git checkout -q main && git pull -q
+git tag v9.9.9   # doesn't match pyproject.toml's real version
+git push origin v9.9.9
+```
+Actions tab → `Release Deploy` → `guard` job fails immediately with `GUARD FAIL: tag
+'v9.9.9' != pyproject '...'`. `deploy` and `promote` never start — `production` doesn't move.
+Clean up:
+```bash
+git push origin :refs/tags/v9.9.9
+git tag -d v9.9.9
+```
+
+## 6. Scenario: hotfix while a feature is still pending (§13.8)
+
+This one's a decision tree, not something to automate — walk it manually to feel the
+actual bind: merge a `feat` to `main`, **don't** merge the Release PR yet, then cut a
+hotfix and merge it. Watch the Release PR (still open) update itself to include *both*
+commits — that's the bundling problem, live, not hypothetical:
+
+```bash
+git checkout -q main && git pull -q
+git checkout -q -b feat/pending
+echo 'def pending(): pass' >> app.py
+git add app.py && git commit -q -m "feat: something not ready for QA yet"
+git push -q -u origin feat/pending
+gh pr create --fill --base main && gh pr merge --squash --auto
+
+# don't touch the Release PR that just updated -- now cut a hotfix
+git checkout -q main && git pull -q
+git checkout -q -b hotfix/p1
+echo 'def safe(): pass' > cart.py
+git add cart.py && git commit -q -m "fix: prevent a null-cart crash"
+git push -q -u origin hotfix/p1
+gh pr create --fill --base main --label hotfix && gh pr merge --squash --auto
+```
+Open the Release PR now — it lists **both** the `feat` and the `fix`. Merging it ships
+both. See §13.8 in the plan for the 3 ways out (flag off / owner-approved early ship /
+revert-then-reapply) — none of those steps are automated here on purpose, they're a human
+decision each time.
+
+## 7. What's real vs. stubbed
+
+| Piece | This demo | Real `deca-pages-api` design |
+|---|---|---|
+| `release-please` version bump / CHANGELOG / tag / Release | **Real** | Real |
+| Branch + tag rulesets | **Real** | Real |
+| Required status check blocking merge | **Real** | Real (multiple checks) |
+| Guard job (tag == pyproject, reachable from main) | **Real** | Real |
+| `production` pointer branch, fast-forwarded on deploy | **Real** | Real |
+| Bot identity for Release PR / checklist | default `GITHUB_TOKEN` — **CI/checklist don't auto-fire on the Release PR** | GitHub App token — they do |
+| `deploy` job | `echo` + `sleep 3` | CDK deploy + Copilot pipeline |
+| Checklist comment | fresh comment every run | sticky comment, updated in place |
+
+## 8. Cleanup
+
+```bash
+gh repo delete <owner>/deca-release-train-demo --yes   # deletes the real GitHub repo
+cd .. && rm -rf github/.git   # if you want the local files gone too (or just leave them)
+```

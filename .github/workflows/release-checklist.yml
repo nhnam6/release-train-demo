@@ -1,0 +1,54 @@
+name: Release Checklist
+
+# Posts the auto-generated part of the change checklist (RELEASE_PLAN.md §6.3
+# / §7, mục A + B) as a comment on the Release PR that release-please opens.
+# Simplification vs. the real design: a fresh comment each run, not a sticky
+# one that updates in place -- fine for a demo, not for daily noise on a real
+# repo.
+#
+# Same caveat as release-please.yml: the Release PR is opened by the default
+# GITHUB_TOKEN, so its own "PR opened" event will NOT trigger this workflow
+# (GitHub anti-recursion). To see it run, either re-run it manually from the
+# Actions tab, or push an empty human commit onto the Release PR branch
+# (`git commit --allow-empty -m "chore: nudge CI"`) -- a human push does
+# trigger it normally. The real repo's GitHub App token avoids this entirely.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  checklist:
+    if: startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Generate + post checklist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          LAST_TAG=$(git tag --sort=-creatordate | head -1 || true)
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tag yet -- first release, nothing to diff against."
+            exit 0
+          fi
+          {
+            python3 scripts/checklist.py "$LAST_TAG" HEAD
+            echo ""
+            echo "### C. Go / No-Go -- sign by hand"
+            echo "- [ ] QA sign-off on DEV"
+            echo "- [ ] CI green"
+            echo "- [ ] Backward compatible"
+            echo "- [ ] Not a Friday"
+          } > /tmp/checklist.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/checklist.md

@@ -1,0 +1,51 @@
+name: Release Deploy
+
+# Fires on the tag release-please just cut. RELEASE_PLAN.md §6.2. Same 3
+# jobs as the real design; `deploy` is a stub here since there's no real AWS
+# in this demo -- everything git/GitHub-side (guard, tag, production branch)
+# is real.
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag must match pyproject.toml and be reachable from main
+        run: |
+          git fetch origin main
+          bash scripts/guard.sh "${GITHUB_REF_NAME}" origin/main
+
+  deploy:
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: (stub) deploy
+        run: |
+          echo "deploying ${GITHUB_REF_NAME} -- real repo runs CDK + Copilot here"
+          sleep 3
+          echo "(stub) deploy finished"
+
+  promote:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fast-forward production -> this tag
+        run: git push origin "${GITHUB_SHA}:refs/heads/production"
