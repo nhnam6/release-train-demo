@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/nhnam6/release-train-demo/compare/v0.2.0...v0.2.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* update release deploy ([#9](https://github.com/nhnam6/release-train-demo/issues/9)) ([63f01cb](https://github.com/nhnam6/release-train-demo/commit/63f01cb3cba23e09bc5035fa8b141ee8404e3282))
+
 ## [0.2.0](https://github.com/nhnam6/release-train-demo/compare/v0.1.1...v0.2.0) (2026-09-09)
 
 
