@@ -15,10 +15,20 @@ Bonus: this also **answers a real open question** from RELEASE_PLAN.md §6.1 —
 Watch what its first Release PR does to `pyproject.toml`.
 
 > **Bugs this demo already caught, running for real** (kept here, not swept under the rug):
-> the very first Release PR's checklist run silently posted nothing — `release-checklist.yml`
-> assumed a previous tag always exists to diff from, which is false for a repo's first-ever
-> release. Fixed by falling back to the root commit when no tag exists yet. Only bites once,
-> on release #1 — every release after has a tag to diff against.
+> - The first Release PR's checklist run silently posted nothing — assumed a previous tag
+>   always exists to diff from, false on a repo's first-ever release. Fixed with a root-commit
+>   fallback. Only bites once, on release #1.
+> - The checklist diffed against the Release PR branch's own `HEAD` — wrong: `release-please`
+>   only rebases that branch when a new commit parses as a conventional-commit type it tracks;
+>   a commit it doesn't recognize (GitHub's own auto-revert message, `Revert "..." (#N)`) lands
+>   on `main` but the branch silently stays behind it. Fixed to diff against `origin/main`,
+>   the only source that's always current.
+> - **Biggest one:** `release-deploy.yml` never fired at all. A tag pushed by the default
+>   `GITHUB_TOKEN` (release-please's own tag) doesn't trigger `on: push: tags:` — same
+>   anti-recursion rule as the PR case below, just hitting the demo's central mechanism
+>   instead of a side one. Added `workflow_dispatch` as the manual escape hatch (§3 step 4
+>   now uses it). The real repo's GitHub App token avoids this for tags too, same as it does
+>   for PRs.
 
 ---
 
@@ -154,9 +164,17 @@ Watch on GitHub:
    ```
    or click **Approve and run** on the run's page. Once approved, `Release Checklist` posts
    a comment with the auto-generated change list + impact flags.
-4. **Merge that Release PR.** Watch: a `v0.2.0` tag appears (Tags tab), a GitHub Release is
-   published (Releases tab), and `Release Deploy` runs — `guard` (real check against the tag),
-   `deploy` (stub), `promote` (real `git push` fast-forwarding `production`). Confirm:
+4. **Merge that Release PR.** A `v0.2.0` tag appears (Tags tab) and a GitHub Release is
+   published (Releases tab) — but `Release Deploy` **won't start on its own**: the tag was
+   pushed by `GITHUB_TOKEN`, same anti-recursion issue as step 3, now hitting `on: push:
+   tags:` instead of `on: pull_request:`. Trigger it by hand:
+   ```bash
+   gh workflow run release-deploy.yml --repo "$REPO" -f tag=v0.2.0
+   ```
+   Unlike steps 3/4's PR-triggered runs, this one runs immediately — no approval needed,
+   since you're calling `workflow_dispatch` directly as yourself, not through a bot-authored
+   event. Watch `guard` (real check against the tag), `deploy` (stub), `promote` (real `git
+   push` fast-forwarding `production`) run in order. Confirm:
    ```bash
    git fetch origin production
    git log --oneline -1 origin/production   # should be the release commit, tagged v0.2.0
@@ -232,7 +250,7 @@ decision each time.
 | Required status check blocking merge | **Real** | Real (multiple checks) |
 | Guard job (tag == pyproject, reachable from main) | **Real** | Real |
 | `production` pointer branch, fast-forwarded on deploy | **Real** | Real |
-| Bot identity for Release PR / checklist | default `GITHUB_TOKEN` — **CI/checklist don't auto-fire on the Release PR** | GitHub App token — they do |
+| Bot identity for Release PR / checklist / tag | default `GITHUB_TOKEN` — **CI, checklist, and `release-deploy.yml` all need a manual kick** (`gh api .../approve` or `gh workflow run`) | GitHub App token — all three fire on their own |
 | `deploy` job | `echo` + `sleep 3` | CDK deploy + Copilot pipeline |
 | Checklist comment | fresh comment every run | sticky comment, updated in place |
 

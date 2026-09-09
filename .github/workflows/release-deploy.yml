@@ -4,10 +4,22 @@ name: Release Deploy
 # jobs as the real design; `deploy` is a stub here since there's no real AWS
 # in this demo -- everything git/GitHub-side (guard, tag, production branch)
 # is real.
+#
+# Also has workflow_dispatch, found necessary by running this for real: a tag
+# pushed by the default GITHUB_TOKEN (release-please's own push) does NOT
+# fire `on: push: tags:` -- same anti-recursion rule that blocks CI/checklist
+# on the Release PR, just biting a second, more central place. Until the real
+# repo's GitHub App token (RELEASE_PLAN.md §8 Q4) is in place, every tag needs
+# a manual run here.
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to deploy (needed when a bot-authored tag push did not trigger this automatically)'
+        required: true
 
 concurrency:
   group: release-deploy
@@ -19,14 +31,26 @@ permissions:
 jobs:
   guard:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      sha: ${{ steps.resolve.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Resolve which tag + commit this run targets
+        id: resolve
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+          SHA=$(git rev-parse "refs/tags/$TAG")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
       - name: Tag must match pyproject.toml and be reachable from main
         run: |
           git fetch origin main
-          bash scripts/guard.sh "${GITHUB_REF_NAME}" origin/main
+          bash scripts/guard.sh "${{ steps.resolve.outputs.tag }}" origin/main
 
   deploy:
     needs: guard
@@ -34,12 +58,12 @@ jobs:
     steps:
       - name: (stub) deploy
         run: |
-          echo "deploying ${GITHUB_REF_NAME} -- real repo runs CDK + Copilot here"
+          echo "deploying ${{ needs.guard.outputs.tag }} -- real repo runs CDK + Copilot here"
           sleep 3
           echo "(stub) deploy finished"
 
   promote:
-    needs: deploy
+    needs: [guard, deploy]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -48,4 +72,4 @@ jobs:
         with:
           fetch-depth: 0
       - name: Fast-forward production -> this tag
-        run: git push origin "${GITHUB_SHA}:refs/heads/production"
+        run: git push origin "${{ needs.guard.outputs.sha }}:refs/heads/production"
