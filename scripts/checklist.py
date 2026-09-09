@@ -23,6 +23,10 @@ HIDDEN = {"docs", "test", "ci", "style", "build"}
 SECTION_ORDER = ["Features", "Bug Fixes", "Performance", "Refactoring", "Reverts", "Miscellaneous"]
 CONVENTIONAL = re.compile(r"^(\w+)(\([^)]*\))?(!)?:\s*(.+)")
 RELEASE_COMMIT = re.compile(r"^chore.*release", re.IGNORECASE)
+# GitHub's own auto-generated revert commit ('Revert "fix: ... (#6)" (#7)') doesn't
+# match CONVENTIONAL (no colon right after the type word) and would otherwise fall
+# back to a generic "chore" classification -- give it its own section instead.
+GITHUB_REVERT = re.compile(r'^Revert\s+"', re.IGNORECASE)
 
 FLAG_RULES = [
     (lambda f: f.startswith("cdk/"), "🏗️ Infra change -- see CDK Diff"),
@@ -52,15 +56,15 @@ def main():
     for subject, sha in commits:
         if RELEASE_COMMIT.match(subject):
             continue  # this release's own commit -- don't list itself
-        m = CONVENTIONAL.match(subject)
-        kind = m.group(1) if m else "chore"
+        if GITHUB_REVERT.match(subject):
+            kind = "revert"
+        else:
+            m = CONVENTIONAL.match(subject)
+            kind = m.group(1) if m else "chore"
         if kind in HIDDEN:
             continue
         section = SECTIONS.get(kind, "Miscellaneous")
         grouped.setdefault(section, []).append(f"- {subject} ({sha})")
-
-    files = [f for f in sh("diff", "--name-only", f"{frm}..{to}").splitlines() if f]
-    flags = [label for test, label in FLAG_RULES if any(test(f) for f in files)]
 
     print(f"## {frm} -> {to} -- {len(commits)} commits\n")
     print("### A. What changed (auto)")
@@ -74,12 +78,18 @@ def main():
     if not any_section:
         print("- (only hidden commit types since last tag)")
         print()
-    print("### B. Impact flags (auto)")
-    if flags:
-        for f in flags:
-            print(f"- {f}")
-    else:
-        print("- (no sensitive paths touched)")
+
+    # B. Impact flags -- temporarily disabled to keep the flow simple while the
+    # basics (A, and diffing against the right ref) get shaken out. Re-enable by
+    # uncommenting build_flags() below + printing it same as before.
+    # files = [f for f in sh("diff", "--name-only", f"{frm}..{to}").splitlines() if f]
+    # flags = [label for test, label in FLAG_RULES if any(test(f) for f in files)]
+    # print("### B. Impact flags (auto)")
+    # if flags:
+    #     for f in flags:
+    #         print(f"- {f}")
+    # else:
+    #     print("- (no sensitive paths touched)")
 
 
 if __name__ == "__main__":

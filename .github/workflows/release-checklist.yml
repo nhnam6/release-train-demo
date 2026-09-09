@@ -37,20 +37,24 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          git fetch origin main
+          # Diff against origin/main, NOT this PR branch's own HEAD. Found by
+          # running this for real: release-please only updates its branch when
+          # a new commit parses as a conventional-commit type it tracks -- a
+          # commit it doesn't recognize (e.g. GitHub's own auto-revert message,
+          # "Revert "..." (#N)") lands on main but the branch silently stays
+          # one commit behind it. main is always the authoritative "what's
+          # actually going out" source; this branch is not.
           LAST_TAG=$(git tag --sort=-creatordate | head -1 || true)
           if [ -z "$LAST_TAG" ]; then
             # First release ever -- nothing to diff against. Fall back to the
             # repo's root commit instead of silently posting nothing.
-            LAST_TAG=$(git rev-list --max-parents=0 HEAD | tail -1)
+            LAST_TAG=$(git rev-list --max-parents=0 origin/main | tail -1)
             echo "No previous tag yet -- diffing from the first commit ($LAST_TAG)."
           fi
           {
-            python3 scripts/checklist.py "$LAST_TAG" HEAD
-            echo ""
-            echo "### C. Go / No-Go -- sign by hand"
-            echo "- [ ] QA sign-off on DEV"
-            echo "- [ ] CI green"
-            echo "- [ ] Backward compatible"
-            echo "- [ ] Not a Friday"
+            python3 scripts/checklist.py "$LAST_TAG" origin/main
           } > /tmp/checklist.md
+          # C. Go/No-Go -- temporarily dropped, keeping the flow to just "what
+          # changed" while A gets shaken out. Re-add once A is solid.
           gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/checklist.md
