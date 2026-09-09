@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/nhnam6/release-train-demo/compare/v0.2.1...v0.2.2) (2026-09-09)
+
+
+### Miscellaneous
+
+* add test md ([#11](https://github.com/nhnam6/release-train-demo/issues/11)) ([fc88863](https://github.com/nhnam6/release-train-demo/commit/fc88863e5f9eadedbcb6a45aa53f37d579d1f152))
+
 ## [0.2.1](https://github.com/nhnam6/release-train-demo/compare/v0.2.0...v0.2.1) (2026-09-09)
 
 
