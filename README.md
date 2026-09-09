@@ -38,6 +38,25 @@ gh repo create deca-release-train-demo --private --source=. --remote=origin --pu
 
 That last command creates the GitHub repo **and** pushes `main` in one step.
 
+**Required before anything else runs:** new repos default to *not* letting Actions open
+PRs — `release-please` needs to, on the very first push to `main`. Without this, its run
+fails with `GitHub Actions is not permitted to create or approve pull requests.`
+
+```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+
+gh api -X PUT "repos/$REPO/actions/permissions/workflow" --input - <<'EOF'
+{
+  "default_workflow_permissions": "write",
+  "can_approve_pull_request_reviews": true
+}
+EOF
+```
+Same toggle on github.com: **Settings → Actions → General → Workflow permissions** →
+*Read and write permissions* + check *Allow GitHub Actions to create and approve pull
+requests* → Save. Hit the error anyway because you pushed before reading this far? Re-run
+the failed job: `gh run rerun $(gh run list --workflow=release-please.yml --limit 1 --json databaseId -q '.[0].databaseId')`.
+
 ## 2. Turn on branch protection (once)
 
 Required status check on `main`, plus a tag ruleset so no one can hand-tag or delete a
@@ -116,18 +135,19 @@ Watch on GitHub:
    release 0.2.0"* (or similar), with `pyproject.toml`'s version bumped and a `CHANGELOG.md`
    generated. **This is the answer to the open question** — check the diff shows
    `version = "0.2.0"` under `[tool.poetry]`, not left untouched.
-3. Its `CI` and `Release Checklist` runs **will not appear automatically** — expected, not a
-   bug. Both workflows fire on `pull_request`, but this PR was opened by the default
-   `GITHUB_TOKEN`, and GitHub doesn't let a `GITHUB_TOKEN`-caused event trigger further
-   workflows (anti-recursion). This is exactly the gap flagged in RELEASE_PLAN.md §8 Q4 — the
-   real repo needs a GitHub App token to avoid it. To see them run anyway:
+3. Its `CI` and `Release Checklist` runs land as **`action_required`** in the Actions tab
+   instead of running — expected, not a bug. Both trigger on `pull_request`, but the PR was
+   opened by the default `GITHUB_TOKEN`, and GitHub gates `pull_request`-triggered runs
+   behind manual approval when the actor is a bot rather than blocking them outright. This
+   is exactly the gap flagged in RELEASE_PLAN.md §8 Q4 — the real repo needs a GitHub App
+   token to avoid the friction. Approve them for real:
    ```bash
-   gh pr checkout release-please--branches--main   # or whatever branch name it printed
-   git commit --allow-empty -m "chore: nudge CI"
-   git push
+   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+   gh run list --json databaseId,name,status -q '.[] | select(.status=="action_required")'
+   gh api -X POST "repos/$REPO/actions/runs/<run-id>/approve"   # once per pending run
    ```
-   A human push isn't subject to the same restriction — both workflows fire normally, and
-   `Release Checklist` posts a comment with the auto-generated change list + impact flags.
+   or click **Approve and run** on the run's page. Once approved, `Release Checklist` posts
+   a comment with the auto-generated change list + impact flags.
 4. **Merge that Release PR.** Watch: a `v0.2.0` tag appears (Tags tab), a GitHub Release is
    published (Releases tab), and `Release Deploy` runs — `guard` (real check against the tag),
    `deploy` (stub), `promote` (real `git push` fast-forwarding `production`). Confirm:
