@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "demo-service"
-version = "0.4.0"
+version = "0.5.0"
 description = "Real-GitHub demo of the deca-pages-api tag-based release train"
 authors = ["Engineers <dev@resola.ai>"]
 
