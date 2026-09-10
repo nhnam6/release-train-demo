@@ -1,16 +1,27 @@
 name: Release Deploy
 
-# Fires on the tag release-please just cut. RELEASE_PLAN.md §6.2. Same 3
-# jobs as the real design; `deploy` is a stub here since there's no real AWS
-# in this demo -- everything git/GitHub-side (guard, tag, production branch)
-# is real.
+# guard -> deploy -> promote for a given tag. RELEASE_PLAN.md §6.2. `deploy`
+# is a stub here (no real AWS in this demo) -- guard, tag, `production` are
+# real.
 #
-# Also has workflow_dispatch, found necessary by running this for real: a tag
-# pushed by the default GITHUB_TOKEN (release-please's own push) does NOT
-# fire `on: push: tags:` -- same anti-recursion rule that blocks CI/checklist
-# on the Release PR, just biting a second, more central place. Until the real
-# repo's GitHub App token (RELEASE_PLAN.md §8 Q4) is in place, every tag needs
-# a manual run here.
+# Reusable (workflow_call) AND independently triggerable (push tags / manual
+# dispatch) at once -- both are needed, not a compromise between them:
+#
+#   - `workflow_call`, invoked from release-please.yml right after it cuts a
+#     tag, in the SAME run. This is the primary path. It sidesteps GitHub's
+#     anti-recursion rule entirely rather than working around it: that rule
+#     only blocks a GITHUB_TOKEN-caused event from starting a NEW workflow
+#     run. A job called via workflow_call isn't a new run triggered by an
+#     event -- it's still the one run that started from the original push to
+#     main, so there's nothing for the rule to block. Confirmed by running
+#     this demo before the merge: `push: tags:` on this file never fired for
+#     a bot-authored tag (release-deploy never ran at all); `workflow_call`
+#     from the same run as the tag creation does not have that problem,
+#     because it was never a second triggered run to begin with.
+#   - `push: tags:` / `workflow_dispatch` stay for the cases workflow_call
+#     can't cover: redeploying an OLD tag for rollback (RELEASE_PLAN.md §8.2
+#     R2), or a human pushing a tag directly. Both are real actors, not
+#     GITHUB_TOKEN, so the anti-recursion rule was never the problem there.
 
 on:
   push:
@@ -18,8 +29,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to deploy (needed when a bot-authored tag push did not trigger this automatically)'
+        description: 'Tag to deploy (e.g. for a rollback redeploy of an older tag)'
         required: true
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Tag to deploy, passed by release-please.yml'
+        required: true
+        type: string
 
 concurrency:
   group: release-deploy
@@ -42,7 +59,10 @@ jobs:
         id: resolve
         run: |
           set -euo pipefail
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          # `inputs.tag` covers both workflow_call and workflow_dispatch (GitHub
+          # unified these two contexts) -- falls through to the pushed tag's own
+          # ref_name for the `push: tags:` trigger, where there are no inputs.
+          TAG="${{ inputs.tag || github.ref_name }}"
           git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
           SHA=$(git rev-parse "refs/tags/$TAG")
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
