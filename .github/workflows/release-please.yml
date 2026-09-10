@@ -1,14 +1,25 @@
 name: Release Please
 
-# Owns: rolling Release PR (version bump + CHANGELOG), and on merge — the
+# Owns: rolling Release PR (version bump + CHANGELOG), and on merge -- the
 # tag + GitHub Release. RELEASE_PLAN.md §6.1 / D3.
 #
-# Uses the default GITHUB_TOKEN, on purpose, for this demo. The real repo
-# needs a GitHub App token instead (RELEASE_PLAN.md §8 Q4) so the Release
-# PR's own push can trigger `pull_request` workflows (ci.yml) — the default
-# token can't, by GitHub's anti-recursion design. That means in THIS demo,
-# ci.yml will NOT auto-run on the Release PR — watch for that, it's not a
-# bug, it's exactly the gap the real plan flags.
+# Also calls release-deploy.yml (guard -> deploy -> promote) as a job in
+# THIS SAME run, right after release-please-action cuts a tag -- instead of
+# relying on that tag's own push to separately trigger release-deploy.yml's
+# `on: push: tags:`. Found by running this demo before the merge: a tag
+# pushed by the default GITHUB_TOKEN does not fire `push`-triggered
+# workflows at all (GitHub's anti-recursion rule -- also the reason
+# ci.yml / release-checklist.yml need a manual approve on the Release PR
+# itself, a separate instance of the same rule this merge does NOT fix).
+# Calling release-deploy.yml with `uses:` isn't a new triggered run, so the
+# rule has nothing to block here.
+#
+# Trade-off, on purpose: deviates from deca-ai-studio / deca-agents, which
+# both keep release-please and tag/deploy as separate workflows and solve
+# this with a GitHub App token instead (RELEASE_PLAN.md §8 Q4) -- that App
+# (`ci-cd-at-resola`) isn't wired up for deca-pages-api yet, confirmed by
+# checking its real secrets. This merge is the cheaper alternative for this
+# demo; revisit if/when that App gets installed for the real repo.
 
 on:
   push:
@@ -25,9 +36,33 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: main
+
+  # release-please.yml fires on EVERY push to main, not just Release PR
+  # merges -- this job only actually does anything the one time in however
+  # many runs that a tag really got cut.
+  #
+  # NOT YET VERIFIED: `release_created` / `tag_name` are the output names
+  # for release-please-action v4's *single, unprefixed root package* mode
+  # (packages: { ".": {} }), going by its docs -- unconfirmed against a real
+  # run in this demo. If this job's `if:` never turns true even when a
+  # Release PR clearly merged, check the actual output names via
+  # `gh run view --log` on the release-please job and fix the two lines
+  # above to match.
+  deploy:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    uses: ./.github/workflows/release-deploy.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag }}
+    permissions:
+      contents: write
