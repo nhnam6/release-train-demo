@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0](https://github.com/nhnam6/release-train-demo/compare/v0.4.0...v0.5.0) (2026-09-10)
+
+
+### Features
+
+* add feat3 ([#22](https://github.com/nhnam6/release-train-demo/issues/22)) ([32bbd35](https://github.com/nhnam6/release-train-demo/commit/32bbd352d2339ae881c084f11e456b2636346511))
+
+
+### Bug Fixes
+
+* add fix3 ([#24](https://github.com/nhnam6/release-train-demo/issues/24)) ([de5f23b](https://github.com/nhnam6/release-train-demo/commit/de5f23b3e39d24fdde21244f1b74812320679742))
+
+
+### Miscellaneous
+
+* add title lint ([#26](https://github.com/nhnam6/release-train-demo/issues/26)) ([3ffe821](https://github.com/nhnam6/release-train-demo/commit/3ffe821976f65279ca7e1b9cac9a36a7224858ee))
+
 ## [0.4.0](https://github.com/nhnam6/release-train-demo/compare/v0.3.0...v0.4.0) (2026-09-10)
 
 
