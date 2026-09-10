@@ -15,6 +15,23 @@ name: PR Title Lint
 #     surfaced as PR #23 still proposing a stale, wrong version bump.
 # Both would have been caught HERE, at PR-review time, instead of being
 # discovered later by someone noticing the release-please output looked off.
+#
+# Examples (verified against the exact regex below, not by eye):
+#   PASS  feat: add hello endpoint
+#   PASS  feat(TK-123): add hello endpoint
+#   PASS  fix(TK-7757): prevent crash on null cart
+#   PASS  feat!: drop legacy /v0 endpoints              <- breaking change
+#   PASS  feat(api)!: change response shape             <- scope + breaking
+#   PASS  revert: remove feat3 before the hotfix ships  <- correct way to revert
+#   PASS  chore: bump dependency versions
+#   PASS  docs: explain the latest-tag override          (hidden in changelog, still a valid title)
+#   FAIL  Add hello endpoint                             <- no type prefix
+#   FAIL  Revert "feat: add feat3 (#22)" (#25)           <- GitHub's Revert-button default (PR #13)
+#   FAIL  revert[22] "feat: add feat3"                   <- old [TK-x] bracket style (PR #25)
+#   FAIL  FEAT: add hello endpoint                       <- type must be lowercase
+#   FAIL  feat : add hello endpoint                      <- no space before the colon
+#   FAIL  feat:add hello endpoint                        <- needs a space after the colon
+#   FAIL  update readme                                  <- no type at all
 
 on:
   pull_request:
