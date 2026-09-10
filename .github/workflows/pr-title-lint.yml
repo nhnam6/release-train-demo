@@ -1,0 +1,46 @@
+name: PR Title Lint
+
+# Required check blocking merge on `main` unless the PR title is a valid
+# conventional commit. This repo squash-merges every PR -- the title
+# becomes the actual commit on main, and both `release-please` and
+# `scripts/checklist.py` depend on that commit being parseable.
+#
+# Exists because of 3 real bugs found running this demo, all with the same
+# root cause: a PR title that wasn't a conventional commit still merged
+# fine, and only broke something invisibly downstream --
+#   - PR #13: GitHub's own "Revert" button title (`Revert "..."`) merged as-is
+#     -> release-please silently opened/updated nothing at all.
+#   - PR #25: a hand-typed near-miss (`revert[22] "feat: add feat3"`, old
+#     deca-pages-api bracket style, not `revert:`) -> same silent no-op,
+#     surfaced as PR #23 still proposing a stale, wrong version bump.
+# Both would have been caught HERE, at PR-review time, instead of being
+# discovered later by someone noticing the release-please output looked off.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR title must be a conventional commit
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$TITLE" | grep -qE '^(feat|fix|perf|refactor|chore|revert|docs|test|ci|style|build)(\([^)]*\))?!?: .+'; then
+            echo "::error::PR title is not a conventional commit: \"$TITLE\""
+            echo "This repo squash-merges every PR -- the title becomes the commit on main."
+            echo "Expected: type(scope): description  (scope optional), e.g.:"
+            echo "  fix: prevent a null-cart crash"
+            echo "  revert: remove feat3 before the hotfix ships"
+            echo "GitHub's own Revert-button title ('Revert \"...\"') always fails this --"
+            echo "rename it before merging, don't just re-run this check."
+            exit 1
+          fi
+          echo "OK: $TITLE"
